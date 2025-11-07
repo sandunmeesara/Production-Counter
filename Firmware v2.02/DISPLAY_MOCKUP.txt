@@ -1,0 +1,133 @@
+╔════════════════════════════════════════════════════════════════╗
+║    OLED 128x64 DISPLAY - PRODUCTION COUNTER - VISUAL MOCKUP    ║
+╚════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════
+                    PRODUCTION ACTIVE (Button ON)
+═══════════════════════════════════════════════════════════════════
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃   P R O D U C T I O N   S T A R T E D     ┃  ← Status Message
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃                                           ┃
+┃                                           ┃
+┃                  2 4 7                    ┃  ← BIG COUNT (Text Size 3)
+┃                                           ┃     Easily readable from distance
+┃                                           ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ Start: 14:30:25                           ┃  ← Start Time Reference
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Real-time count updates continuously:
+  Time 0s:   Count = 0
+  Time 2s:   Count = 5
+  Time 5s:   Count = 12
+  Time 10s:  Count = 25
+  Time 30s:  Count = 73
+  ...continues until button released
+
+═══════════════════════════════════════════════════════════════════
+                   PRODUCTION STOPPED (Button OFF)
+═══════════════════════════════════════════════════════════════════
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃   P R O D U C T I O N   S T O P P E D     ┃  ← Status Message (Changed)
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃                                           ┃
+┃                                           ┃
+┃                  2 4 7                    ┃  ← FINAL COUNT (stays fixed)
+┃                                           ┃
+┃                                           ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃ Start: 14:30:25                           ┃  ← Session start time reference
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+Count remains frozen at 247 until next production session starts.
+File saved on SD card as:
+  Production_20251107_143025_to_143530.txt
+
+═══════════════════════════════════════════════════════════════════
+                          FONT SIZES
+═══════════════════════════════════════════════════════════════════
+
+STATUS MESSAGE (Text Size 1 - Normal):
+┏─────────────────────────────────────┓
+┃ P R O D U C T I O N   S T A R T E D ┃  Height: ~8 pixels
+┗─────────────────────────────────────┘
+
+PRODUCTION COUNT (Text Size 3 - Large):
+┌─────────────────────────────────────┐
+│                                     │
+│             2 4 7                   │  Height: ~21 pixels
+│                                     │  Width: varies by number
+│                                     │  Examples:
+│                                     │    "5" = ~13 pixels wide
+│                                     │    "99" = ~25 pixels wide
+│                                     │    "1234" = ~50 pixels wide
+│                                     │
+└─────────────────────────────────────┘
+
+REFERENCE TEXT (Text Size 1 - Normal):
+┏─────────────────────────────────────┐
+┃ Start: 14:30:25                     ┃  Height: ~8 pixels
+┗─────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+                      LAYOUT BREAKDOWN
+═══════════════════════════════════════════════════════════════════
+
+Line 0-9:    "PRODUCTION STARTED" or "PRODUCTION STOPPED"
+             ├─ Height: 8 pixels
+             └─ Horizontally centered
+
+Line 10:     ────────────────────────────── (Divider)
+             ├─ Visual separator
+             └─ Separates status from content
+
+Line 11-47:  BIG COUNT (centered)
+             ├─ Height: 21 pixels (Text Size 3)
+             ├─ Horizontally centered
+             ├─ Shows: 0-9999+ (auto-scales with width)
+             └─ Main focus of the display
+
+Line 48:     ────────────────────────────── (Divider)
+             ├─ Visual separator
+             └─ Separates content from info
+
+Line 49-63:  "Start: HH:MM:SS" reference time
+             ├─ Height: 8 pixels
+             └─ Reference information
+
+═══════════════════════════════════════════════════════════════════
+                    IMPROVEMENT BENEFITS
+═══════════════════════════════════════════════════════════════════
+
+✓ LARGER TEXT: Count is much easier to read (8px → 21px)
+✓ CLEANER: Removed unnecessary information (prev hour, current total)
+✓ FOCUSED: All attention on production count
+✓ CLEAR STATUS: Always know if production is active or stopped
+✓ MINIMALIST: Simple, modern design
+✓ PROFESSIONAL: Great for factory/production floor display
+✓ VISIBLE FROM DISTANCE: Large font readable from several feet away
+✓ HIGH CONTRAST: Black text on white background (or white on black)
+
+═══════════════════════════════════════════════════════════════════
+                   TECHNICAL SPECIFICATIONS
+═══════════════════════════════════════════════════════════════════
+
+OLED Display:
+  • Resolution: 128 x 64 pixels
+  • Type: SSD1306
+  • Interface: I2C (Address: 0x3C)
+  • Colors: Monochrome (Black & White)
+
+Display Regions:
+  • Status Region: 10 pixels (Y: 0-9)
+  • Divider 1: 1 pixel (Y: 10)
+  • Count Region: 37 pixels (Y: 11-47)
+  • Divider 2: 1 pixel (Y: 48)
+  • Info Region: 14 pixels (Y: 49-63)
+
+Total: 64 pixels (full screen height)
+
+═══════════════════════════════════════════════════════════════════

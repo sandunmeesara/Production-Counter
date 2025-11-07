@@ -1,0 +1,200 @@
+# Quick Reference - Production Counter System
+
+## Pin Layout Summary
+
+```
+COUNTER SYSTEM PINS (ESP32)
+──────────────────────────
+
+INPUT BUTTONS:
+  GPIO 15  → Counter Button (to GND)       [pulse count]
+  GPIO 25  → Production Latch (to GND)     [toggle PROD on/off]
+  GPIO 27  → Diagnostic Button (to GND)    [enter test mode]
+
+I2C DEVICES (GPIO 21=SDA, GPIO 22=SCL):
+  LCD 16x4 (Address: 0x27 or 0x3F)
+  RTC DS3231 (Address: 0x68)
+
+SPI DEVICES (VSPI - SPI3):
+  GPIO 18  → SCK   (SD Clock)
+  GPIO 19  → MISO  (SD Data In)
+  GPIO 23  → MOSI  (SD Data Out)
+  GPIO 26  → CS    (SD Chip Select)
+
+POWER:
+  5V   → ESP32, SD Module
+  3.3V → I2C Devices (LCD, RTC)
+  GND  → All devices common
+```
+
+## LCD Display at a Glance
+
+```
+Production ACTIVE:          Production IDLE:
+┌────────────────────┐      ┌────────────────────┐
+│[PROD] 14:32:15    │      │[IDLE] 14:32:15    │
+│Count: 00145       │      │Count: 00145       │
+│Session: 00145     │      │Hour: 00156        │
+│S:14:25:30         │      │Ready              │
+└────────────────────┘      └────────────────────┘
+```
+
+## File Structure
+
+**Production Log Files:**
+- Format: `/PROD_YYYYMMDD_HHMMSS.txt`
+- Created when: Production latch button turned ON
+- Updated when: Production latch button turned OFF
+- Content: Start time, End time, Item count
+
+**Example:**
+```
+/PROD_20251106_143025.txt
+=== PRODUCTION LOG ===
+Started: 2025-11-06 14:30:25
+Ended: 2025-11-06 14:35:45
+Count: 123
+```
+
+## Button Functions
+
+| Button | Pin | Function | Action |
+|--------|-----|----------|--------|
+| Counter | GPIO 15 | Count items | Press/release for each item |
+| Production Latch | GPIO 25 | Toggle production | Toggle ON→OFF or OFF→ON |
+| Diagnostic | GPIO 27 | Enter test mode | Hold for 200ms, press again to exit |
+
+## Key State Variables
+
+```cpp
+productionActive        // true = production on, false = production off
+productionSessionCount  // count during current production session
+productionStartTime     // DateTime when production started
+currentCount            // real-time accumulated count
+hourlyCount             // count from last hour
+```
+
+## Important LCD Addresses
+
+| Address | Type | Notes |
+|---------|------|-------|
+| 0x27 | Most common | Standard PCF8574 backpack |
+| 0x3F | Alternative | Some backpack variants |
+| 0x20 | Rare | Check your backpack documentation |
+
+**To find your address:**
+1. Upload address scanner sketch
+2. Check serial output
+3. Update `LCD_ADDRESS` in code
+
+## Serial Debug Commands Quick List
+
+```
+INFO              - Display menu
+DEBOUNCE,50       - Set debounce 50ms
+SAVE              - Save settings
+RESET             - Reset count
+TIME,2025,11,06,14,32,15  - Set RTC time
+```
+
+## Troubleshooting Flowchart
+
+```
+LCD not showing?
+  ├─ Check power (5V to backpack)
+  ├─ Check I2C connections (21=SDA, 22=SCL)
+  ├─ Try different I2C address (0x3F instead of 0x27)
+  └─ Adjust contrast potentiometer
+
+Production button not working?
+  ├─ Check GPIO 25 → GND connection
+  ├─ Test with diagnostic mode
+  └─ Check debounce delay
+
+SD card errors?
+  ├─ Format to FAT32
+  ├─ Check CS pin (GPIO 26)
+  ├─ Try slower SPI speed
+  └─ Verify 3.3V on MOSI/MISO/CLK
+
+RTC loses time after power off?
+  └─ Check battery on DS3231 module
+```
+
+## Production Workflow
+
+```
+START
+  ↓
+[IDLE Mode - Display shows [IDLE]]
+  ↓ (Press Production Button)
+[CREATE LOG FILE]
+  ↓
+[PROD Mode - Display shows [PROD]]
+  ↓ (Each counter button press)
+[Increment Session Count]
+  ↓
+[Wait for more counts or button press]
+  ↓ (Press Production Button again)
+[UPDATE LOG FILE with end time & count]
+  ↓
+[IDLE Mode - Display shows [IDLE]]
+  ↓
+[Log file saved to SD card with all details]
+REPEAT
+```
+
+## Key Functions Reference
+
+```cpp
+// Production Control
+void handleProductionLatch()           // ISR - called on button press
+void createProductionLogFile()         // Creates log when prod starts
+void updateProductionLogFile()         // Updates log when prod stops
+
+// Display
+void displayLCDStartupMessage()        // Shows startup screen
+void drawMainLCDScreen()               // Renders main display
+void showStatus(const char* msg, int duration)  // Shows temporary message
+
+// File Operations
+int readCountFromFile(const char* filename)
+void writeCountToFile(const char* filename, int count)
+
+// Time Management
+DateTime productionStartTime           // Global variable tracking start
+inline int getDisplay12Hour(int hour)
+inline const char* getAmPm(int hour)
+```
+
+## Configuration Constants
+
+```cpp
+#define INTERRUPT_PIN 15
+#define PRODUCTION_LATCH_PIN 25
+#define DIAGNOSTIC_PIN 27
+#define LCD_ADDRESS 0x27              // Change if needed
+#define LCD_COLS 16
+#define LCD_ROWS 4
+#define DEBOUNCE_DELAY 50             // ms (counter button)
+#define SAVE_INTERVAL 5000            // ms (auto-save count)
+#define DISPLAY_UPDATE_INTERVAL 500   // ms (LCD refresh)
+#define MAX_COUNT 9999                // Maximum count value
+```
+
+## Testing Checklist
+
+- [ ] LCD displays all 4 rows correctly
+- [ ] RTC shows correct time
+- [ ] Counter button increments count
+- [ ] Production latch button toggles [PROD]/[IDLE]
+- [ ] Log files created on SD card
+- [ ] Diagnostic mode shows PASS/FAIL
+- [ ] Serial commands work (INFO, SAVE, etc.)
+- [ ] Count persists after power cycle
+- [ ] Hourly logs created at hour boundary
+
+---
+
+**Last Updated:** November 6, 2025
+**System:** ESP32 Production Counter v2.0 (LCD Edition)
