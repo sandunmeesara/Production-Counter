@@ -1226,10 +1226,10 @@ void drawMainScreen() {
     // Status at top
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(10, 2);
+    display.setCursor(10, 0);
     display.println("Pro. Started");
     
-    // Big production count (center)
+    // EXTRA BIG production count (center) - Text size 5
     noInterrupts();
     int count = currentCount - productionStartCount;
     interrupts();
@@ -1238,9 +1238,9 @@ void drawMainScreen() {
     
     char countStr[10];
     snprintf(countStr, sizeof(countStr), "%d", count);
-    centerDisplayText(3, 20, countStr);
+    centerDisplayText(5, 12, countStr);
     
-    // Time at bottom (HH:MMam/pm format)
+    // Time at bottom (HH.MM AM/PM format with space)
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     
@@ -1248,7 +1248,7 @@ void drawMainScreen() {
     const char* ampm = getAmPm(productionStartTime.hour());
     
     char timeStr[12];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d%s", 
+    snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
              displayHour, productionStartTime.minute(), ampm);
     
     int16_t x1, y1;
@@ -1262,15 +1262,15 @@ void drawMainScreen() {
     // Status at top
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(10, 2);
+    display.setCursor(10, 0);
     display.println("Pro. Stopped");
     
-    // Big count (last production count)
+    // EXTRA BIG count (last production count) - Text size 5
     char countStr[10];
     snprintf(countStr, sizeof(countStr), "%d", productionCount);
-    centerDisplayText(3, 20, countStr);
+    centerDisplayText(5, 12, countStr);
     
-    // Time at bottom (HH:MMam/pm format)
+    // Time at bottom (HH.MM AM/PM format with space)
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     
@@ -1278,7 +1278,7 @@ void drawMainScreen() {
     const char* ampm = getAmPm(productionStartTime.hour());
     
     char timeStr[12];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d%s", 
+    snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
              displayHour, productionStartTime.minute(), ampm);
     
     int16_t x1, y1;
