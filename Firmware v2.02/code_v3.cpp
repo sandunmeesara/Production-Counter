@@ -1248,8 +1248,8 @@ void drawMainScreen() {
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 52);
     display.print("Start: ");
-    char startTimeStr[12];
-    formatTimeString(startTimeStr, productionStartTime, true);
+  char startTimeStr[20];
+  formatTimeString(startTimeStr, productionStartTime, true);
     display.println(startTimeStr);
     
   } else {
@@ -1274,8 +1274,8 @@ void drawMainScreen() {
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 52);
     display.print("Start: ");
-    char startTimeStr[12];
-    formatTimeString(startTimeStr, productionStartTime, true);
+  char startTimeStr[20];
+  formatTimeString(startTimeStr, productionStartTime, true);
     display.println(startTimeStr);
   }
   
