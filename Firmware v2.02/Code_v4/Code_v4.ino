@@ -169,8 +169,7 @@ void IRAM_ATTR handleInterrupt() {
   unsigned long currentTime = millis();
   
   if (currentTime - lastInterruptTime > cachedDebounceDelay) {
-    // Only count during production session
-    if (productionActive && currentCount < MAX_COUNT) {
+    if (currentCount < MAX_COUNT) {
       currentCount++;
       countChanged = true;
     }
@@ -487,14 +486,14 @@ void loop() {
     if (productionStatusChanged) {
       productionStatusChanged = false;
       
-      // Read the actual button state (LOW = pressed/ON, HIGH = released/OFF)
+      // Read the actual button state
       bool buttonPressed = (digitalRead(LATCHING_PIN) == LOW);
       
       if (buttonPressed) {
-        // Button is being held DOWN → START production
+        // Button pressed (turned ON)
         startProduction();
       } else {
-        // Button is released → STOP production
+        // Button released (turned OFF)
         stopProduction();
       }
       
@@ -1223,13 +1222,14 @@ void drawMainScreen() {
   
   if (productionActive) {
     // ===== PRODUCTION ACTIVE DISPLAY =====
-    // Status at top
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(10, 2);
-    display.println("Pro. Started");
+    display.setCursor(25, 0);
+    display.println("PRODUCTION STARTED");
     
-    // Big production count (center)
+    display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+    
+    // Big production count (center of screen)
     noInterrupts();
     int count = currentCount - productionStartCount;
     interrupts();
@@ -1240,52 +1240,43 @@ void drawMainScreen() {
     snprintf(countStr, sizeof(countStr), "%d", count);
     centerDisplayText(3, 20, countStr);
     
-    // Time at bottom (HH:MMam/pm format)
+    // Divider line
+    display.drawLine(0, 48, SCREEN_WIDTH, 48, SSD1306_WHITE);
+    
+    // Start time at bottom
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    
-    int displayHour = getDisplay12Hour(productionStartTime.hour());
-    const char* ampm = getAmPm(productionStartTime.hour());
-    
-    char timeStr[12];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d%s", 
-             displayHour, productionStartTime.minute(), ampm);
-    
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor((SCREEN_WIDTH - w) / 2, 56);
-    display.println(timeStr);
+    display.setCursor(0, 52);
+    display.print("Start: ");
+  char startTimeStr[20];
+  formatTimeString(startTimeStr, productionStartTime, true);
+    display.println(startTimeStr);
     
   } else {
-    // ===== PRODUCTION STOPPED DISPLAY =====
-    // Status at top
+    // ===== NORMAL DISPLAY / STOPPED =====
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(10, 2);
-    display.println("Pro. Stopped");
+    display.setCursor(25, 0);
+    display.println("PRODUCTION STOPPED");
     
-    // Big count (last production count)
+    display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
+    
+    // Display last production count in large text
     char countStr[10];
     snprintf(countStr, sizeof(countStr), "%d", productionCount);
     centerDisplayText(3, 20, countStr);
     
-    // Time at bottom (HH:MMam/pm format)
+    // Divider line
+    display.drawLine(0, 48, SCREEN_WIDTH, 48, SSD1306_WHITE);
+    
+    // Session times at bottom
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    
-    int displayHour = getDisplay12Hour(productionStartTime.hour());
-    const char* ampm = getAmPm(productionStartTime.hour());
-    
-    char timeStr[12];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d%s", 
-             displayHour, productionStartTime.minute(), ampm);
-    
-    int16_t x1, y1;
-    uint16_t w, h;
-    display.getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
-    display.setCursor((SCREEN_WIDTH - w) / 2, 56);
-    display.println(timeStr);
+    display.setCursor(0, 52);
+    display.print("Start: ");
+  char startTimeStr[20];
+  formatTimeString(startTimeStr, productionStartTime, true);
+    display.println(startTimeStr);
   }
   
   // Display everything
