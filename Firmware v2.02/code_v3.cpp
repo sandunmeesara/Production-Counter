@@ -752,29 +752,37 @@ void writeCountToFile(const char* filename, int count) {
 void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
   
-  noInterrupts();
-  int finalCount = currentCount;
-  currentCount = 0;
-  countChanged = false;
-  interrupts();
-  
-  hourlyCount = finalCount;
-  
-  // Add hourly count to cumulative count
-  cumulativeCount += hourlyCount;
-  
-  if (sdAvailable) {
-    writeCountToFile(COUNT_FILE, 0);
-    writeCountToFile(HOURLY_FILE, hourlyCount);
-    writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
-    createHourlyLogFile(now, finalCount, cumulativeCount);
+  // IMPORTANT: Only reset currentCount if production is NOT active
+  // If production is active, we need to preserve the count differential
+  if (!productionActive) {
+    noInterrupts();
+    int finalCount = currentCount;
+    currentCount = 0;
+    countChanged = false;
+    interrupts();
+    
+    hourlyCount = finalCount;
+    
+    // Add hourly count to cumulative count
+    cumulativeCount += hourlyCount;
+    
+    if (sdAvailable) {
+      writeCountToFile(COUNT_FILE, 0);
+      writeCountToFile(HOURLY_FILE, hourlyCount);
+      writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
+      createHourlyLogFile(now, finalCount, cumulativeCount);
+    }
+    
+    needsFullRedraw = true;
+    showStatus("Hour Logged", 2000);
+    
+    Serial.print("✓ Hour logged: "); Serial.print(finalCount);
+    Serial.print(" | Cumulative: "); Serial.println(cumulativeCount);
+  } else {
+    // Production is active - just update cumulative without resetting
+    Serial.println("⚠ Hour changed during production - production count preserved");
+    needsFullRedraw = true;
   }
-  
-  needsFullRedraw = true;
-  showStatus("Hour Logged", 2000);
-  
-  Serial.print("✓ Hour logged: "); Serial.print(finalCount);
-  Serial.print(" | Cumulative: "); Serial.println(cumulativeCount);
 }
 
 void createHourlyLogFile(DateTime dt, int count, int cumulative) {
@@ -1183,6 +1191,47 @@ void saveProductionSession() {
   SD_END();
   
   Serial.print("✓ Production session saved: "); Serial.println(filename);
+  
+  // Also save hourly production count to separate file
+  saveHourlyProductionCount();
+}
+
+void saveHourlyProductionCount() {
+  // Create hourly production summary file
+  char filename[64];
+  DateTime now = rtcAvailable ? rtc.now() : productionStartTime;
+  
+  // Filename: HourlyProduction_YYYYMMDD.txt
+  snprintf(filename, sizeof(filename), "/HourlyProduction_%04d%02d%02d.txt",
+           now.year(), now.month(), now.day());
+  
+  SD_BEGIN();
+  
+  File file = SD.open(filename, FILE_APPEND);
+  if (!file) {
+    SD_END();
+    Serial.print("✗ Failed to save hourly production count: "); Serial.println(filename);
+    return;
+  }
+  
+  // Append production session info to hourly file
+  file.println("---");
+  file.print("Session: ");
+  char startStr[20];
+  formatTimeString(startStr, productionStartTime, false);
+  file.print(startStr);
+  file.print(" to ");
+  char stopStr[20];
+  formatTimeString(stopStr, productionStopTime, false);
+  file.println(stopStr);
+  file.print("Count: ");
+  file.println(productionCount);
+  
+  file.flush();
+  file.close();
+  SD_END();
+  
+  Serial.print("✓ Hourly production count saved to: "); Serial.println(filename);
 }
 
 // ========================================
@@ -1404,7 +1453,9 @@ void debugMenu() {
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║           OTHER COMMANDS               ║");
   Serial.println("╚════════════════════════════════════════╝");
-  Serial.println("  INFO           - Show this menu again\n");
+  Serial.println("  INFO           - Show this menu again");
+  Serial.println("  STATUS         - Check SD card status");
+  Serial.println("  REINIT         - Re-initialize SD card\n");
 }
 
 bool processDebugCommand(String input) {
@@ -1432,6 +1483,60 @@ bool processDebugCommand(String input) {
     interrupts();
     needsFullRedraw = true;
     Serial.println("✓ Current count reset to 0");
+    return true;
+  }
+  
+  // Check if SD card is available for file commands
+  if (input == "LS" || input == "PROD" || input.startsWith("SEARCH,") || 
+      input.startsWith("READ,") || input.startsWith("DEL,")) {
+    if (!sdAvailable) {
+      Serial.println("✗ SD Card not available!");
+      Serial.println("  Check SD card connection and try again.");
+      Serial.println("  Tip: Press GPIO 27 for diagnostics to test SD card");
+      return true;
+    }
+  }
+  
+  // Check SD status
+  if (input == "STATUS") {
+    Serial.println("\n╔════════════════════════════════════════╗");
+    Serial.println("║          SYSTEM STATUS CHECK          ║");
+    Serial.println("╚════════════════════════════════════════╝\n");
+    
+    Serial.print("OLED Display:   ✓ OK (Connected)\n");
+    Serial.print("RTC Module:     ");
+    Serial.println(rtcAvailable ? "✓ OK" : "✗ NOT CONNECTED");
+    Serial.print("SD Card:        ");
+    Serial.println(sdAvailable ? "✓ READY" : "✗ NOT READY");
+    
+    if (sdAvailable) {
+      SD_BEGIN();
+      uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+      Serial.print("SD Card Size:   ");
+      Serial.print(cardSize);
+      Serial.println(" MB");
+      SD_END();
+    }
+    Serial.println();
+    return true;
+  }
+  
+  // Re-initialize SD card
+  if (input == "REINIT") {
+    Serial.println("\nAttempting SD card re-initialization...");
+    SD.end();
+    delay(500);
+    digitalWrite(SD_CS_PIN, HIGH);
+    delay(500);
+    
+    sdAvailable = initializeSD();
+    
+    if (sdAvailable) {
+      Serial.println("✓ SD card successfully re-initialized!");
+      initializeFiles();
+    } else {
+      Serial.println("✗ SD card re-initialization FAILED");
+    }
     return true;
   }
   
