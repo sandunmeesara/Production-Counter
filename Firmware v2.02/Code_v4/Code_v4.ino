@@ -169,7 +169,8 @@ void IRAM_ATTR handleInterrupt() {
   unsigned long currentTime = millis();
   
   if (currentTime - lastInterruptTime > cachedDebounceDelay) {
-    if (currentCount < MAX_COUNT) {
+    // Only count during production session
+    if (productionActive && currentCount < MAX_COUNT) {
       currentCount++;
       countChanged = true;
     }
@@ -418,6 +419,48 @@ void setup() {
     Serial.print(", cumulative=");
     Serial.println(cumulativeCount);
   }
+
+  // --- Recover/initialize production state after reboot ---
+  // Read the latching (production) button to decide whether to
+  // restore the last count or reset to zero on startup.
+  pinMode(LATCHING_PIN, INPUT_PULLUP); // ensure we can read the pin
+  bool latchPressed = (digitalRead(LATCHING_PIN) == LOW); // LOW = pressed
+
+  if (latchPressed) {
+    // If the button is pressed during boot, assume production is active
+    // and restore the last saved count so the display shows the previous value.
+    productionActive = true;
+    productionStartCount = 0; // show full saved count on screen
+    productionCount = 0;
+    if (rtcAvailable) {
+      productionStartTime = rtc.now();
+    } else {
+      // Fallback time (compile-time date) if RTC isn't available
+      productionStartTime = DateTime(2025, 11, 12, 0, 0, 0);
+    }
+
+    Serial.println("✓ Reboot: Latching pin pressed - resuming production (restored last count)");
+    showStatus("Production Resumed", 1500);
+    needsFullRedraw = true;
+  } else {
+    // If the button is NOT pressed, reset the count to zero on startup
+    productionActive = false;
+    noInterrupts();
+    currentCount = 0;
+    countChanged = true;
+    interrupts();
+
+    // Persist the reset count if SD is available
+    if (sdAvailable) {
+      writeCountToFile(COUNT_FILE, 0);
+    }
+
+    productionStartCount = 0;
+    productionCount = 0;
+    Serial.println("✓ Reboot: Latching pin not pressed - count reset to 0");
+    showStatus("Count Reset", 1200);
+    needsFullRedraw = true;
+  }
   
   // Setup interrupts
   pinMode(INTERRUPT_PIN, INPUT_PULLUP);
@@ -486,14 +529,14 @@ void loop() {
     if (productionStatusChanged) {
       productionStatusChanged = false;
       
-      // Read the actual button state
+      // Read the actual button state (LOW = pressed/ON, HIGH = released/OFF)
       bool buttonPressed = (digitalRead(LATCHING_PIN) == LOW);
       
       if (buttonPressed) {
-        // Button pressed (turned ON)
+        // Button is being held DOWN → START production
         startProduction();
       } else {
-        // Button released (turned OFF)
+        // Button is released → STOP production
         stopProduction();
       }
       
@@ -751,29 +794,37 @@ void writeCountToFile(const char* filename, int count) {
 void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
   
-  noInterrupts();
-  int finalCount = currentCount;
-  currentCount = 0;
-  countChanged = false;
-  interrupts();
-  
-  hourlyCount = finalCount;
-  
-  // Add hourly count to cumulative count
-  cumulativeCount += hourlyCount;
-  
-  if (sdAvailable) {
-    writeCountToFile(COUNT_FILE, 0);
-    writeCountToFile(HOURLY_FILE, hourlyCount);
-    writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
-    createHourlyLogFile(now, finalCount, cumulativeCount);
+  // IMPORTANT: Only reset currentCount if production is NOT active
+  // If production is active, we need to preserve the count differential
+  if (!productionActive) {
+    noInterrupts();
+    int finalCount = currentCount;
+    currentCount = 0;
+    countChanged = false;
+    interrupts();
+    
+    hourlyCount = finalCount;
+    
+    // Add hourly count to cumulative count
+    cumulativeCount += hourlyCount;
+    
+    if (sdAvailable) {
+      writeCountToFile(COUNT_FILE, 0);
+      writeCountToFile(HOURLY_FILE, hourlyCount);
+      writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
+      createHourlyLogFile(now, finalCount, cumulativeCount);
+    }
+    
+    needsFullRedraw = true;
+    showStatus("Hour Logged", 2000);
+    
+    Serial.print("✓ Hour logged: "); Serial.print(finalCount);
+    Serial.print(" | Cumulative: "); Serial.println(cumulativeCount);
+  } else {
+    // Production is active - just update cumulative without resetting
+    Serial.println("⚠ Hour changed during production - production count preserved");
+    needsFullRedraw = true;
   }
-  
-  needsFullRedraw = true;
-  showStatus("Hour Logged", 2000);
-  
-  Serial.print("✓ Hour logged: "); Serial.print(finalCount);
-  Serial.print(" | Cumulative: "); Serial.println(cumulativeCount);
 }
 
 void createHourlyLogFile(DateTime dt, int count, int cumulative) {
@@ -1182,6 +1233,47 @@ void saveProductionSession() {
   SD_END();
   
   Serial.print("✓ Production session saved: "); Serial.println(filename);
+  
+  // Also save hourly production count to separate file
+  saveHourlyProductionCount();
+}
+
+void saveHourlyProductionCount() {
+  // Create hourly production summary file
+  char filename[64];
+  DateTime now = rtcAvailable ? rtc.now() : productionStartTime;
+  
+  // Filename: HourlyProduction_YYYYMMDD.txt
+  snprintf(filename, sizeof(filename), "/HourlyProduction_%04d%02d%02d.txt",
+           now.year(), now.month(), now.day());
+  
+  SD_BEGIN();
+  
+  File file = SD.open(filename, FILE_APPEND);
+  if (!file) {
+    SD_END();
+    Serial.print("✗ Failed to save hourly production count: "); Serial.println(filename);
+    return;
+  }
+  
+  // Append production session info to hourly file
+  file.println("---");
+  file.print("Session: ");
+  char startStr[20];
+  formatTimeString(startStr, productionStartTime, false);
+  file.print(startStr);
+  file.print(" to ");
+  char stopStr[20];
+  formatTimeString(stopStr, productionStopTime, false);
+  file.println(stopStr);
+  file.print("Count: ");
+  file.println(productionCount);
+  
+  file.flush();
+  file.close();
+  SD_END();
+  
+  Serial.print("✓ Hourly production count saved to: "); Serial.println(filename);
 }
 
 // ========================================
@@ -1222,14 +1314,13 @@ void drawMainScreen() {
   
   if (productionActive) {
     // ===== PRODUCTION ACTIVE DISPLAY =====
+    // Status at top
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(25, 0);
-    display.println("PRODUCTION STARTED");
+    display.setCursor(10, 0);
+    display.println("Pro. Started");
     
-    display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
-    
-    // Big production count (center of screen)
+    // EXTRA BIG production count (center) - Text size 5
     noInterrupts();
     int count = currentCount - productionStartCount;
     interrupts();
@@ -1238,45 +1329,54 @@ void drawMainScreen() {
     
     char countStr[10];
     snprintf(countStr, sizeof(countStr), "%d", count);
-    centerDisplayText(3, 20, countStr);
+    centerDisplayText(5, 12, countStr);
     
-    // Divider line
-    display.drawLine(0, 48, SCREEN_WIDTH, 48, SSD1306_WHITE);
-    
-    // Start time at bottom
+    // Time at bottom (HH.MM AM/PM format with space)
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 52);
-    display.print("Start: ");
-  char startTimeStr[20];
-  formatTimeString(startTimeStr, productionStartTime, true);
-    display.println(startTimeStr);
+    
+    int displayHour = getDisplay12Hour(productionStartTime.hour());
+    const char* ampm = getAmPm(productionStartTime.hour());
+    
+    char timeStr[12];
+    snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
+             displayHour, productionStartTime.minute(), ampm);
+    
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor((SCREEN_WIDTH - w) / 2, 56);
+    display.println(timeStr);
     
   } else {
-    // ===== NORMAL DISPLAY / STOPPED =====
+    // ===== PRODUCTION STOPPED DISPLAY =====
+    // Status at top
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(25, 0);
-    display.println("PRODUCTION STOPPED");
+    display.setCursor(10, 0);
+    display.println("Pro. Stopped");
     
-    display.drawLine(0, 10, SCREEN_WIDTH, 10, SSD1306_WHITE);
-    
-    // Display last production count in large text
+    // EXTRA BIG count (last production count) - Text size 5
     char countStr[10];
     snprintf(countStr, sizeof(countStr), "%d", productionCount);
-    centerDisplayText(3, 20, countStr);
+    centerDisplayText(5, 12, countStr);
     
-    // Divider line
-    display.drawLine(0, 48, SCREEN_WIDTH, 48, SSD1306_WHITE);
-    
-    // Session times at bottom
+    // Time at bottom (HH.MM AM/PM format with space)
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
-    display.setCursor(0, 52);
-    display.print("Start: ");
-  char startTimeStr[20];
-  formatTimeString(startTimeStr, productionStartTime, true);
-    display.println(startTimeStr);
+    
+    int displayHour = getDisplay12Hour(productionStartTime.hour());
+    const char* ampm = getAmPm(productionStartTime.hour());
+    
+    char timeStr[12];
+    snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
+             displayHour, productionStartTime.minute(), ampm);
+    
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(timeStr, 0, 0, &x1, &y1, &w, &h);
+    display.setCursor((SCREEN_WIDTH - w) / 2, 56);
+    display.println(timeStr);
   }
   
   // Display everything
@@ -1395,7 +1495,9 @@ void debugMenu() {
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║           OTHER COMMANDS               ║");
   Serial.println("╚════════════════════════════════════════╝");
-  Serial.println("  INFO           - Show this menu again\n");
+  Serial.println("  INFO           - Show this menu again");
+  Serial.println("  STATUS         - Check SD card status");
+  Serial.println("  REINIT         - Re-initialize SD card\n");
 }
 
 bool processDebugCommand(String input) {
@@ -1423,6 +1525,60 @@ bool processDebugCommand(String input) {
     interrupts();
     needsFullRedraw = true;
     Serial.println("✓ Current count reset to 0");
+    return true;
+  }
+  
+  // Check if SD card is available for file commands
+  if (input == "LS" || input == "PROD" || input.startsWith("SEARCH,") || 
+      input.startsWith("READ,") || input.startsWith("DEL,")) {
+    if (!sdAvailable) {
+      Serial.println("✗ SD Card not available!");
+      Serial.println("  Check SD card connection and try again.");
+      Serial.println("  Tip: Press GPIO 27 for diagnostics to test SD card");
+      return true;
+    }
+  }
+  
+  // Check SD status
+  if (input == "STATUS") {
+    Serial.println("\n╔════════════════════════════════════════╗");
+    Serial.println("║          SYSTEM STATUS CHECK          ║");
+    Serial.println("╚════════════════════════════════════════╝\n");
+    
+    Serial.print("OLED Display:   ✓ OK (Connected)\n");
+    Serial.print("RTC Module:     ");
+    Serial.println(rtcAvailable ? "✓ OK" : "✗ NOT CONNECTED");
+    Serial.print("SD Card:        ");
+    Serial.println(sdAvailable ? "✓ READY" : "✗ NOT READY");
+    
+    if (sdAvailable) {
+      SD_BEGIN();
+      uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+      Serial.print("SD Card Size:   ");
+      Serial.print(cardSize);
+      Serial.println(" MB");
+      SD_END();
+    }
+    Serial.println();
+    return true;
+  }
+  
+  // Re-initialize SD card
+  if (input == "REINIT") {
+    Serial.println("\nAttempting SD card re-initialization...");
+    SD.end();
+    delay(500);
+    digitalWrite(SD_CS_PIN, HIGH);
+    delay(500);
+    
+    sdAvailable = initializeSD();
+    
+    if (sdAvailable) {
+      Serial.println("✓ SD card successfully re-initialized!");
+      initializeFiles();
+    } else {
+      Serial.println("✗ SD card re-initialization FAILED");
+    }
     return true;
   }
   

@@ -419,6 +419,48 @@ void setup() {
     Serial.print(", cumulative=");
     Serial.println(cumulativeCount);
   }
+
+  // --- Recover/initialize production state after reboot ---
+  // Read the latching (production) button to decide whether to
+  // restore the last count or reset to zero on startup.
+  pinMode(LATCHING_PIN, INPUT_PULLUP); // ensure we can read the pin
+  bool latchPressed = (digitalRead(LATCHING_PIN) == LOW); // LOW = pressed
+
+  if (latchPressed) {
+    // If the button is pressed during boot, assume production is active
+    // and restore the last saved count so the display shows the previous value.
+    productionActive = true;
+    productionStartCount = 0; // show full saved count on screen
+    productionCount = 0;
+    if (rtcAvailable) {
+      productionStartTime = rtc.now();
+    } else {
+      // Fallback time (compile-time date) if RTC isn't available
+      productionStartTime = DateTime(2025, 11, 12, 0, 0, 0);
+    }
+
+    Serial.println("✓ Reboot: Latching pin pressed - resuming production (restored last count)");
+    showStatus("Production Resumed", 1500);
+    needsFullRedraw = true;
+  } else {
+    // If the button is NOT pressed, reset the count to zero on startup
+    productionActive = false;
+    noInterrupts();
+    currentCount = 0;
+    countChanged = true;
+    interrupts();
+
+    // Persist the reset count if SD is available
+    if (sdAvailable) {
+      writeCountToFile(COUNT_FILE, 0);
+    }
+
+    productionStartCount = 0;
+    productionCount = 0;
+    Serial.println("✓ Reboot: Latching pin not pressed - count reset to 0");
+    showStatus("Count Reset", 1200);
+    needsFullRedraw = true;
+  }
   
   // Setup interrupts
   pinMode(INTERRUPT_PIN, INPUT_PULLUP);
