@@ -894,54 +894,6 @@ void writeCountToFile(const char* filename, int count) {
   file.close();
 }
 
-void saveHourlyCountFile(DateTime now, int hourlyCountValue) {
-  if (!sdAvailable) {
-    Serial.println("  ⚠ SD Card not available - cannot create hourly file");
-    return;
-  }
-  
-  // Create hourly file with more readable format: 2025-11-15_15h (15:00-16:00)
-  char filename[64];
-  int startHour = now.hour();
-  
-  snprintf(filename, sizeof(filename), "/%04d-%02d-%02d_%02dh.txt",
-           now.year(), now.month(), now.day(), startHour);
-  
-  Serial.print("  → Creating hourly file: "); Serial.println(filename);
-  
-  // Delete if exists to ensure clean write
-  if (SD.exists(filename)) {
-    Serial.println("    (Removing existing file)");
-    if (!SD.remove(filename)) {
-      Serial.println("    ✗ Failed to remove old file");
-    }
-  }
-  
-  File file = SD.open(filename, FILE_WRITE);
-  if (!file) {
-    Serial.print("  ✗ FAILED to create hourly file: "); Serial.println(filename);
-    return;
-  }
-  
-  // Write hourly production data
-  file.println("=== HOURLY PRODUCTION LOG ===");
-  file.print("Hour: ");
-  file.print(now.hour()); file.print(":00 on ");
-  file.print(now.year()); file.print("-");
-  file.print(now.month()); file.print("-");
-  file.println(now.day());
-  
-  file.print("Count in this hour: ");
-  file.println(hourlyCountValue);
-  
-  file.print("Production Active: ");
-  file.println(productionActive ? "YES" : "NO");
-  
-  file.flush();
-  file.close();
-  
-  Serial.print("  ✓ Hourly file CREATED: "); Serial.println(filename);
-}
 
 void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
@@ -958,10 +910,6 @@ void handleHourChange(DateTime now) {
   if (countThisHour < 0) countThisHour = 0;  // Safety check
   
   Serial.print("  Count during this hour: "); Serial.println(countThisHour);
-  
-  // CREATE HOURLY FILE FOR THIS HOUR with count that occurred during this hour
-  saveHourlyCountFile(now, countThisHour);
-  Serial.println("  ✓ Hourly file creation triggered");
   
   // ALWAYS accumulate to cumulative count whenever an hour changes
   cumulativeCount += countThisHour;
