@@ -536,6 +536,7 @@ void loop() {
     // Handle production button state change
     if (productionStatusChanged) {
       productionStatusChanged = false;
+      delay(50);  // Allow pin to settle after interrupt
       
       // Read the actual button state (LOW = pressed/ON, HIGH = released/OFF)
       bool buttonPressed = (digitalRead(LATCHING_PIN) == LOW);
@@ -1444,6 +1445,9 @@ void showStatus(const char* message, int duration) {
 void drawMainScreen() {
   display.clearDisplay();
   
+  // Get current time to display (always use latest RTC time)
+  DateTime displayTime = rtcAvailable ? rtc.now() : productionStartTime;
+  
   if (productionActive) {
     // ===== PRODUCTION ACTIVE DISPLAY =====
     // Status at top
@@ -1463,16 +1467,16 @@ void drawMainScreen() {
     snprintf(countStr, sizeof(countStr), "%d", count);
     centerDisplayText(5, 12, countStr);
     
-    // Time at bottom (HH.MM AM/PM format with space)
+    // Time at bottom (HH.MM AM/PM format with space) - Show CURRENT time
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     
-    int displayHour = getDisplay12Hour(productionStartTime.hour());
-    const char* ampm = getAmPm(productionStartTime.hour());
+    int displayHour = getDisplay12Hour(displayTime.hour());
+    const char* ampm = getAmPm(displayTime.hour());
     
     char timeStr[12];
     snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
-             displayHour, productionStartTime.minute(), ampm);
+             displayHour, displayTime.minute(), ampm);
     
     int16_t x1, y1;
     uint16_t w, h;
@@ -1493,16 +1497,16 @@ void drawMainScreen() {
     snprintf(countStr, sizeof(countStr), "%d", productionCount);
     centerDisplayText(5, 12, countStr);
     
-    // Time at bottom (HH.MM AM/PM format with space)
+    // Time at bottom (HH.MM AM/PM format with space) - Show CURRENT time
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     
-    int displayHour = getDisplay12Hour(productionStartTime.hour());
-    const char* ampm = getAmPm(productionStartTime.hour());
+    int displayHour = getDisplay12Hour(displayTime.hour());
+    const char* ampm = getAmPm(displayTime.hour());
     
     char timeStr[12];
     snprintf(timeStr, sizeof(timeStr), "%02d.%02d %s", 
-             displayHour, productionStartTime.minute(), ampm);
+             displayHour, displayTime.minute(), ampm);
     
     int16_t x1, y1;
     uint16_t w, h;
