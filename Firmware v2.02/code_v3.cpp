@@ -100,6 +100,7 @@ volatile unsigned long cachedDebounceDelay = DEBOUNCE_DELAY;
 const char* COUNT_FILE = "/count.txt";
 const char* HOURLY_FILE = "/hourly_count.txt";
 const char* CUMULATIVE_FILE = "/cumulative_count.txt";
+const char* PRODUCTION_STATE_FILE = "/prod_session.txt";  // Stores active session for recovery
 
 // ========================================
 // HELPER FUNCTION DECLARATIONS
@@ -109,6 +110,9 @@ void printHeader(const char* title);
 String normalizeFilePath(const char* filename);
 void centerDisplayText(int textSize, int y, const char* text);
 void formatTimeString(char* buffer, DateTime dt, bool includeSeconds);
+void saveProductionState();
+void restoreProductionState();
+void clearProductionState();
 
 // ========================================
 // STATUS SYSTEM DEFINES
@@ -462,6 +466,10 @@ void setup() {
     needsFullRedraw = true;
   }
   
+  // Try to recover production session if power was lost unexpectedly
+  // (This overrides the latch button logic if a saved session is found)
+  restoreProductionState();
+  
   // Setup interrupts
   pinMode(INTERRUPT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), handleInterrupt, FALLING);
@@ -568,6 +576,11 @@ void loop() {
       writeCountToFile(COUNT_FILE, countToSave);
       needsStatusUpdate = true;
       lastSaveTime = now;
+      
+      // Also update production state file if production is active (for recovery)
+      if (productionActive) {
+        saveProductionState();
+      }
     }
     
     // Update display
@@ -1159,6 +1172,9 @@ void startProduction() {
   
   showStatus("Production Started", 2000);
   needsFullRedraw = true;
+  
+  // Save state for recovery in case of power loss
+  saveProductionState();
 }
 
 void stopProduction() {
@@ -1182,9 +1198,10 @@ void stopProduction() {
   
   showStatus("Production Stopped", 2000);
   
-  // Save production session to file
+  // Save production session to file and clear state file
   if (sdAvailable) {
     saveProductionSession();
+    clearProductionState();  // Session completed, no need to recover
   }
   
   needsFullRedraw = true;
@@ -1274,6 +1291,121 @@ void saveHourlyProductionCount() {
   SD_END();
   
   Serial.print("✓ Hourly production count saved to: "); Serial.println(filename);
+}
+
+// ========================================
+// PRODUCTION SESSION STATE RECOVERY
+// ========================================
+// This saves the active production session to a state file.
+// If power is lost during production, the session can be recovered on reboot.
+void saveProductionState() {
+  if (!sdAvailable) {
+    return; // Silent fail if SD not available (data will be in memory)
+  }
+  
+  if (!productionActive) {
+    // Production not active, clear any saved state
+    clearProductionState();
+    return;
+  }
+  
+  // Production is active - save current state
+  SD_BEGIN();
+  
+  File file = SD.open(PRODUCTION_STATE_FILE, FILE_WRITE);
+  if (!file) {
+    SD_END();
+    return;
+  }
+  
+  // Format: currentCount|productionStartCount|year|month|day|hour|minute|second
+  file.print(currentCount); file.println();
+  file.print(productionStartCount); file.println();
+  file.print(productionStartTime.year()); file.println();
+  file.print(productionStartTime.month()); file.println();
+  file.print(productionStartTime.day()); file.println();
+  file.print(productionStartTime.hour()); file.println();
+  file.print(productionStartTime.minute()); file.println();
+  file.print(productionStartTime.second()); file.println();
+  
+  file.flush();
+  file.close();
+  SD_END();
+}
+
+// This restores a production session from the state file if it exists.
+// Called during setup to recover from unexpected power loss.
+void restoreProductionState() {
+  if (!sdAvailable) {
+    Serial.println("⚠ Cannot check for production recovery: SD card not available");
+    return;
+  }
+  
+  SD_BEGIN();
+  
+  if (!SD.exists(PRODUCTION_STATE_FILE)) {
+    SD_END();
+    return; // No saved state, normal startup
+  }
+  
+  File file = SD.open(PRODUCTION_STATE_FILE, FILE_READ);
+  if (!file) {
+    SD_END();
+    return;
+  }
+  
+  // Read saved state
+  int savedCurrentCount = file.parseInt();
+  int savedStartCount = file.parseInt();
+  int year = file.parseInt();
+  int month = file.parseInt();
+  int day = file.parseInt();
+  int hour = file.parseInt();
+  int minute = file.parseInt();
+  int second = file.parseInt();
+  
+  file.close();
+  SD_END();
+  
+  // Validate the data
+  if (year >= 2020 && year <= 2100 && month >= 1 && month <= 12 && 
+      day >= 1 && day <= 31 && hour <= 23 && minute <= 59 && second <= 59) {
+    
+    // Restore the production session
+    productionActive = true;
+    currentCount = savedCurrentCount;
+    productionStartCount = savedStartCount;
+    productionStartTime = DateTime(year, month, day, hour, minute, second);
+    productionCount = currentCount - productionStartCount;
+    
+    Serial.println("\n╔════════════════════════════════════════╗");
+    Serial.println("║   PRODUCTION SESSION RECOVERED FROM    ║");
+    Serial.println("║       UNEXPECTED POWER LOSS            ║");
+    Serial.println("╚════════════════════════════════════════╝");
+    Serial.print("✓ Restored count: "); Serial.println(productionCount);
+    Serial.print("✓ Session start: ");
+    char timeStr[20];
+    formatTimeString(timeStr, productionStartTime, true);
+    Serial.println(timeStr);
+    
+    showStatus("Production Recovered!", 2000);
+    needsFullRedraw = true;
+  } else {
+    Serial.println("⚠ Corrupted production state file, skipping recovery");
+  }
+}
+
+// Clear the production state file
+void clearProductionState() {
+  if (!sdAvailable) {
+    return;
+  }
+  
+  SD_BEGIN();
+  if (SD.exists(PRODUCTION_STATE_FILE)) {
+    SD.remove(PRODUCTION_STATE_FILE);
+  }
+  SD_END();
 }
 
 // ========================================
@@ -1396,59 +1528,97 @@ inline const char* getAmPm(int hour) {
 }
 
 bool checkAndSetTimeFromSerial(String input) {
-  int commaCount = 0;
-  for (int i = 0; i < input.length(); i++) {
-    if (input[i] == ',') commaCount++;
+  // Format expected: TIME,YYYY,MM,DD,HH,MM,SS
+  if (!input.startsWith("TIME,")) {
+    return false;
   }
   
+  String timeData = input.substring(5); // Skip "TIME,"
+  int commaCount = 0;
+  for (int i = 0; i < timeData.length(); i++) {
+    if (timeData[i] == ',') commaCount++;
+  }
+  
+  // Need exactly 5 commas for 6 values (YYYY,MM,DD,HH,MM,SS)
   if (commaCount != 5) {
-    return false;
+    Serial.println("✗ Invalid time format. Expected: TIME,YYYY,MM,DD,HH,MM,SS");
+    Serial.println("  Example: TIME,2025,11,15,14,30,45");
+    return true;
   }
   
   int values[6] = {0};
   int index = 0;
   int value = 0;
   
-  for (int i = 0; i < input.length() && index < 6; i++) {
-    char c = input[i];
+  for (int i = 0; i < timeData.length(); i++) {
+    char c = timeData[i];
     if (c >= '0' && c <= '9') {
       value = value * 10 + (c - '0');
     } else if (c == ',') {
-      values[index++] = value;
-      value = 0;
+      if (index < 6) {
+        values[index++] = value;
+        value = 0;
+      }
     }
   }
   
-  // Don't forget last value
+  // Don't forget the last value after final comma
   if (index < 6) {
-    values[index] = value;
+    values[index++] = value;
   }
   
-  if (index == 5 && value >= 0 && value <= 59) {
-    if (values[0] >= 2020 && values[0] <= 2100 &&
-        values[1] >= 1 && values[1] <= 12 &&
-        values[2] >= 1 && values[2] <= 31 &&
-        values[3] >= 0 && values[3] <= 23 &&
-        values[4] >= 0 && values[4] <= 59) {
-      
-      DateTime newTime(values[0], values[1], values[2], values[3], values[4], value);
-      rtc.adjust(newTime);
-      
-      Serial.print("✓ RTC set to: ");
-      Serial.print(values[0]); Serial.print("-");
-      Serial.print(values[1]); Serial.print("-");
-      Serial.print(values[2]); Serial.print(" ");
-      Serial.print(values[3]); Serial.print(":");
-      Serial.print(values[4]); Serial.print(":");
-      Serial.println(value);
-      return true;
-    } else {
-      Serial.println("✗ Invalid values. Expected: YYYY,MM,DD,HH,MM,SS");
-      return true;
-    }
+  // Validate all 6 values parsed
+  if (index != 6) {
+    Serial.println("✗ Failed to parse all 6 time values");
+    return true;
   }
   
-  return false;
+  int year = values[0];
+  int month = values[1];
+  int day = values[2];
+  int hour = values[3];
+  int minute = values[4];
+  int second = values[5];
+  
+  // Validate ranges
+  if (year < 2020 || year > 2100) {
+    Serial.print("✗ Year out of range: "); Serial.println(year);
+    return true;
+  }
+  if (month < 1 || month > 12) {
+    Serial.print("✗ Month out of range: "); Serial.println(month);
+    return true;
+  }
+  if (day < 1 || day > 31) {
+    Serial.print("✗ Day out of range: "); Serial.println(day);
+    return true;
+  }
+  if (hour < 0 || hour > 23) {
+    Serial.print("✗ Hour out of range: "); Serial.println(hour);
+    return true;
+  }
+  if (minute < 0 || minute > 59) {
+    Serial.print("✗ Minute out of range: "); Serial.println(minute);
+    return true;
+  }
+  if (second < 0 || second > 59) {
+    Serial.print("✗ Second out of range: "); Serial.println(second);
+    return true;
+  }
+  
+  // All valid - set the RTC
+  DateTime newTime(year, month, day, hour, minute, second);
+  rtc.adjust(newTime);
+  
+  Serial.print("✓ RTC time set to: ");
+  Serial.print(year); Serial.print("-");
+  Serial.print(month); Serial.print("-");
+  Serial.print(day); Serial.print(" ");
+  Serial.print(hour); Serial.print(":");
+  Serial.print(minute); Serial.print(":");
+  Serial.println(second);
+  
+  return true;
 }
 
 // ========================================
