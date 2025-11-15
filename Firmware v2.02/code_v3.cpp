@@ -1589,14 +1589,7 @@ bool checkAndSetTimeFromSerial(String input) {
   }
   if (second < 0 || second > 59) {
     Serial.print("✗ Second out of range: "); Serial.println(second);
-    // Check if hour changed - if so, handle it immediately
-  if (hour != lastHour) {
-    Serial.println("Hour changed - creating hourly file...");
-    handleHourChange(newTime);
-    lastHour = hour;
-  }
-  
-return true;
+    return true;
   }
   
   // All valid - set the RTC
