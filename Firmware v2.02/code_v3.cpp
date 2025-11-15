@@ -70,6 +70,7 @@ volatile bool productionStatusChanged = false;
 volatile unsigned long lastLatchingButtonTime = 0;
 volatile unsigned long lastDiagnosticButtonTime = 0;
 volatile int lastLatchingButtonState = HIGH;  // Track last known state (HIGH = released)
+int countAtHourStart = 0;  // Track count at the start of each hour
 
 unsigned long lastSaveTime = 0;
 #define SAVE_INTERVAL 5000
@@ -887,7 +888,7 @@ void writeCountToFile(const char* filename, int count) {
   file.close();
 }
 
-void saveHourlyCountFile(DateTime now, int countToSave) {
+void saveHourlyCountFile(DateTime now, int hourlyCountValue) {
   if (!sdAvailable) {
     Serial.println("  ⚠ SD Card not available - cannot create hourly file");
     return;
@@ -922,11 +923,8 @@ void saveHourlyCountFile(DateTime now, int countToSave) {
   file.print(now.month()); file.print("-");
   file.println(now.day());
   
-  file.print("Hourly Count: ");
-  file.println(countToSave);
-  
-  file.print("Cumulative Count: ");
-  file.println(cumulativeCount + countToSave);
+  file.print("Count in this hour: ");
+  file.println(hourlyCountValue);
   
   file.print("Production Active: ");
   file.println(productionActive ? "YES" : "NO");
@@ -947,8 +945,14 @@ void handleHourChange(DateTime now) {
   int finalCount = currentCount;
   interrupts();
   
-  // CREATE HOURLY FILE FOR THIS HOUR with current count
-  saveHourlyCountFile(now, finalCount);
+  // Calculate count that occurred DURING this hour (from start of hour to now)
+  int countThisHour = finalCount - countAtHourStart;
+  if (countThisHour < 0) countThisHour = 0;  // Safety check
+  
+  Serial.print("  Count during this hour: "); Serial.println(countThisHour);
+  
+  // CREATE HOURLY FILE FOR THIS HOUR with count that occurred during this hour
+  saveHourlyCountFile(now, countThisHour);
   Serial.println("  ✓ Hourly file creation triggered");
   
   // IMPORTANT: Only reset currentCount if production is NOT active
@@ -970,14 +974,18 @@ void handleHourChange(DateTime now) {
       writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
     }
     
+    // Reset the count tracker for next hour
+    countAtHourStart = 0;
+    
     needsFullRedraw = true;
     showStatus("Hour Logged", 2000);
     
     Serial.print("✓ Hour logged: "); Serial.print(finalCount);
     Serial.print(" | Cumulative: "); Serial.println(cumulativeCount);
   } else {
-    // Production is active - just update cumulative without resetting
+    // Production is active - preserve count but track start of next hour
     Serial.println("⚠ Hour changed during production - production count preserved");
+    countAtHourStart = finalCount;  // Update for next hour calculation
     needsFullRedraw = true;
   }
 }
@@ -1293,6 +1301,7 @@ void startProduction() {
   productionStartTime = rtc.now();
   productionStartCount = currentCount;
   productionCount = 0;
+  countAtHourStart = currentCount;  // Initialize hour count tracker
   
   Serial.println("\n>>> PRODUCTION STARTED <<<");
   Serial.print("Start Time: ");
