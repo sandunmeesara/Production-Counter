@@ -851,7 +851,6 @@ void handleHourChange(DateTime now) {
       writeCountToFile(COUNT_FILE, 0);
       writeCountToFile(HOURLY_FILE, hourlyCount);
       writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
-      createHourlyLogFile(now, finalCount, cumulativeCount);
     }
     
     needsFullRedraw = true;
@@ -864,41 +863,6 @@ void handleHourChange(DateTime now) {
     Serial.println("⚠ Hour changed during production - production count preserved");
     needsFullRedraw = true;
   }
-}
-
-void createHourlyLogFile(DateTime dt, int count, int cumulative) {
-  char filename[32];
-  int h = getDisplay12Hour(dt.hour());
-  
-  snprintf(filename, sizeof(filename), "/%04d_%02d_%02d_%02d_%02d%s.txt",
-           dt.year(), dt.month(), dt.day(), h, dt.minute(),
-           getAmPm(dt.hour()));
-  
-  SD_BEGIN();
-  
-  File file = SD.open(filename, FILE_WRITE);
-  if (!file) {
-    SD_END();
-    Serial.print("✗ Failed to create log: "); Serial.println(filename);
-    return;
-  }
-  
-  file.print("Time: ");
-  file.print(dt.year()); file.print("-");
-  file.print(dt.month()); file.print("-");
-  file.print(dt.day()); file.print(" ");
-  file.print(dt.hour()); file.print(":");
-  file.println(dt.minute());
-  file.print("Hour Count: ");
-  file.println(count);
-  file.print("Cumulative: ");
-  file.println(cumulative);
-  
-  file.flush();
-  file.close();
-  SD_END();
-  
-  Serial.print("✓ Log: "); Serial.println(filename);
 }
 
 // ========================================
