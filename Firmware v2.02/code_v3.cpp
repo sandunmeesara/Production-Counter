@@ -464,6 +464,11 @@ bool initializeAllSystems() {
     Serial.println(cumulativeCount);
   }
 
+  // Initialize hour start tracker with current count
+  // This ensures hourly file calculations are correct from the moment of startup
+  countAtHourStart = currentCount;
+  Serial.print("✓ Hour start baseline set to: "); Serial.println(countAtHourStart);
+
   // --- Recover/initialize production state after reboot ---
   // Read the latching (production) button to decide whether to
   // restore the last count or reset to zero on startup.
@@ -501,6 +506,7 @@ bool initializeAllSystems() {
 
     productionStartCount = 0;
     productionCount = 0;
+    countAtHourStart = 0;  // Reset baseline when count is reset
     Serial.println("✓ Reboot: Latching pin not pressed - count reset to 0");
     showStatus("Count Reset", 1200);
     needsFullRedraw = true;
@@ -955,6 +961,9 @@ void handleHourChange(DateTime now) {
   saveHourlyCountFile(now, countThisHour);
   Serial.println("  ✓ Hourly file creation triggered");
   
+  // ALWAYS accumulate to cumulative count whenever an hour changes
+  cumulativeCount += countThisHour;
+  
   // IMPORTANT: Only reset currentCount if production is NOT active
   // If production is active, we need to preserve the count differential
   if (!productionActive) {
@@ -964,9 +973,6 @@ void handleHourChange(DateTime now) {
     interrupts();
     
     hourlyCount = finalCount;
-    
-    // Add hourly count to cumulative count
-    cumulativeCount += hourlyCount;
     
     if (sdAvailable) {
       writeCountToFile(COUNT_FILE, 0);
@@ -985,8 +991,16 @@ void handleHourChange(DateTime now) {
   } else {
     // Production is active - preserve count but track start of next hour
     Serial.println("⚠ Hour changed during production - production count preserved");
+    
+    // STILL UPDATE cumulative count file even during production
+    if (sdAvailable) {
+      writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
+    }
+    
     countAtHourStart = finalCount;  // Update for next hour calculation
     needsFullRedraw = true;
+    
+    Serial.print("✓ Cumulative count updated: "); Serial.println(cumulativeCount);
   }
 }
 
