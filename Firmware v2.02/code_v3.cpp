@@ -352,6 +352,7 @@ bool performStartup(int attempt) {
 }
 
 bool initializeAllSystems() {
+  bool allSystemsOk = true;  // Track system initialization status
   
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║   ESP32 COUNTER - OLED 128x64 VERSION ║");
@@ -359,12 +360,8 @@ bool initializeAllSystems() {
   
   // Load settings from EEPROM
   Serial.println("--- Loading Settings from EEPROM ---");
-  if (allSystemsOk) {
-    loadSettingsFromEEPROM();
-    cachedDebounceDelay = runtimeParams.debounceDelay;
-  } else {
-    return false;  // Failed to load settings
-  }
+  loadSettingsFromEEPROM();
+  cachedDebounceDelay = runtimeParams.debounceDelay;
   
   // Initialize I2C for OLED
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -374,8 +371,7 @@ bool initializeAllSystems() {
   Serial.println("\n--- OLED Display Initialization ---");
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println("✗ SSD1306 allocation failed!");
-    allSystemsOk = false;  // Mark as failed
-    if (allSystemsOk) return false;  // Will retry
+    return false;  // Trigger retry on startup
   }
   
   Serial.println("✓ OLED Display initialized");
