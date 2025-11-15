@@ -900,10 +900,12 @@ void saveHourlyCountFile(DateTime now, int hourlyCountValue) {
     return;
   }
   
-  // Create hourly file with format: Hour_YYYYMMDD_HHMM.txt
+  // Create hourly file with more readable format: 2025-11-15_15h (15:00-16:00)
   char filename[64];
-  snprintf(filename, sizeof(filename), "/Hour_%04d%02d%02d_%02d%02d.txt",
-           now.year(), now.month(), now.day(), now.hour(), now.minute());
+  int startHour = now.hour();
+  
+  snprintf(filename, sizeof(filename), "/%04d-%02d-%02d_%02dh.txt",
+           now.year(), now.month(), now.day(), startHour);
   
   Serial.print("  → Creating hourly file: "); Serial.println(filename);
   
@@ -1361,13 +1363,12 @@ void stopProduction() {
 }
 
 void saveProductionSession() {
-  // Create filename with production start and stop times
-  char filename[64];
-  snprintf(filename, sizeof(filename), "/Production_%04d%02d%02d_%02d%02d%02d_to_%02d%02d%02d.txt",
+  // Create filename with readable format: Production_2025-11-15_14h30m-16h45m.txt
+  char filename[80];
+  snprintf(filename, sizeof(filename), "/Production_%04d-%02d-%02d_%02dh%02dm-%02dh%02dm.txt",
            productionStartTime.year(), productionStartTime.month(), productionStartTime.day(),
-           productionStartTime.hour(), productionStartTime.minute(), productionStartTime.second(),
-           productionStopTime.hour(), productionStopTime.minute(), productionStopTime.second());
-  
+           productionStartTime.hour(), productionStartTime.minute(),
+           productionStopTime.hour(), productionStopTime.minute());
   
   // Delete if exists
   if (SD.exists(filename)) {
@@ -1410,13 +1411,13 @@ void saveHourlyProductionCount() {
   char filename[64];
   DateTime now = rtcAvailable ? rtc.now() : productionStartTime;
   
-  // Filename: HourlyProduction_YYYYMMDD.txt
-  snprintf(filename, sizeof(filename), "/HourlyProduction_%04d%02d%02d.txt",
+  // Filename: DailyProduction_2025-11-15.txt
+  snprintf(filename, sizeof(filename), "/DailyProduction_%04d-%02d-%02d.txt",
            now.year(), now.month(), now.day());
   
   File file = SD.open(filename, FILE_APPEND);
   if (!file) {
-    Serial.print("✗ Failed to save hourly production count: "); Serial.println(filename);
+    Serial.print("✗ Failed to save daily production count: "); Serial.println(filename);
     return;
   }
   
