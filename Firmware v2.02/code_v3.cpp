@@ -887,7 +887,7 @@ void writeCountToFile(const char* filename, int count) {
   file.close();
 }
 
-void saveHourlyCountFile(DateTime now) {
+void saveHourlyCountFile(DateTime now, int countToSave) {
   if (!sdAvailable) {
     Serial.println("  ⚠ SD Card not available - cannot create hourly file");
     return;
@@ -923,10 +923,10 @@ void saveHourlyCountFile(DateTime now) {
   file.println(now.day());
   
   file.print("Hourly Count: ");
-  file.println(hourlyCount);
+  file.println(countToSave);
   
   file.print("Cumulative Count: ");
-  file.println(cumulativeCount);
+  file.println(cumulativeCount + countToSave);
   
   file.print("Production Active: ");
   file.println(productionActive ? "YES" : "NO");
@@ -942,15 +942,19 @@ void handleHourChange(DateTime now) {
   Serial.print("  Previous hour: "); Serial.print(lastHour);
   Serial.print(" → New hour: "); Serial.println(now.hour());
   
-  // CREATE HOURLY FILE FOR THIS HOUR (always do this)
-  saveHourlyCountFile(now);
+  // Get the current count BEFORE we reset it
+  noInterrupts();
+  int finalCount = currentCount;
+  interrupts();
+  
+  // CREATE HOURLY FILE FOR THIS HOUR with current count
+  saveHourlyCountFile(now, finalCount);
   Serial.println("  ✓ Hourly file creation triggered");
   
   // IMPORTANT: Only reset currentCount if production is NOT active
   // If production is active, we need to preserve the count differential
   if (!productionActive) {
     noInterrupts();
-    int finalCount = currentCount;
     currentCount = 0;
     countChanged = false;
     interrupts();
