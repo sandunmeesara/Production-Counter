@@ -888,19 +888,15 @@ void listAllFiles() {
   
   printHeader("FILES ON SD CARD");
   
-  SD_BEGIN();
-  
   File root = SD.open("/");
   if (!root) {
     Serial.println("✗ Cannot open root directory");
-    SD_END();
     return;
   }
   
   if (!root.isDirectory()) {
     Serial.println("✗ Root is not a directory");
     root.close();
-    SD_END();
     return;
   }
   
@@ -935,7 +931,6 @@ void listAllFiles() {
   
   file.close();
   root.close();
-  SD_END();
   
   printDivider();
   Serial.print("✓ Total files: ");
@@ -954,12 +949,9 @@ void searchFiles(const char* searchPattern) {
   
   printHeader("SEARCHING FILES");
   
-  SD_BEGIN();
-  
   File root = SD.open("/");
   if (!root) {
     Serial.println("✗ Cannot open root directory");
-    SD_END();
     return;
   }
   
@@ -991,7 +983,6 @@ void searchFiles(const char* searchPattern) {
   
   file.close();
   root.close();
-  SD_END();
   
   printDivider();
   Serial.print("✓ Found: ");
@@ -1013,13 +1004,10 @@ void readFile(const char* filename) {
   
   printHeader("READING FILE");
   
-  SD_BEGIN();
-  
   // Check if file exists
   if (!SD.exists(filename)) {
     Serial.print("✗ File not found: ");
     Serial.println(filename);
-    SD_END();
     return;
   }
   
@@ -1027,7 +1015,6 @@ void readFile(const char* filename) {
   if (!file) {
     Serial.print("✗ Cannot open file: ");
     Serial.println(filename);
-    SD_END();
     return;
   }
   
@@ -1062,7 +1049,6 @@ void readFile(const char* filename) {
   Serial.println(" lines");
   
   file.close();
-  SD_END();
   
   Serial.println();
 }
@@ -1075,12 +1061,9 @@ void readProductionFiles() {
   
   printHeader("PRODUCTION SESSION FILES");
   
-  SD_BEGIN();
-  
   File root = SD.open("/");
   if (!root) {
     Serial.println("✗ Cannot open root directory");
-    SD_END();
     return;
   }
   
@@ -1111,7 +1094,6 @@ void readProductionFiles() {
   
   file.close();
   root.close();
-  SD_END();
   
   printDivider();
   Serial.print("✓ Total production files: ");
@@ -1130,12 +1112,9 @@ void deleteFile(const char* filename) {
     return;
   }
   
-  SD_BEGIN();
-  
   if (!SD.exists(filename)) {
     Serial.print("✗ File not found: ");
     Serial.println(filename);
-    SD_END();
     return;
   }
   
@@ -1146,8 +1125,6 @@ void deleteFile(const char* filename) {
     Serial.print("✗ Failed to delete file: ");
     Serial.println(filename);
   }
-  
-  SD_END();
 }
 
 // ========================================
