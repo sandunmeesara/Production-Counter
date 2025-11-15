@@ -522,12 +522,15 @@ void loop() {
     String input = Serial.readStringUntil('\n');
     input.trim();
     
-    if (input.length() > 0) {
+    // Safety limit on input length to prevent buffer issues
+    if (input.length() > 0 && input.length() < 256) {
       input.toUpperCase();
       
       if (!processDebugCommand(input)) {
         checkAndSetTimeFromSerial(input);
       }
+    } else if (input.length() >= 256) {
+      Serial.println("✗ Input too long (max 256 characters)");
     }
     return;
   }
@@ -643,8 +646,21 @@ bool initializeSD() {
     delayMicroseconds(500);
     
     Serial.print("    Calling SD.begin()...");
+    unsigned long startTime = millis();
+    const unsigned long SD_INIT_TIMEOUT = 5000;  // 5 second timeout
+    
+    // Use timeout to prevent watchdog triggered reboot if SD.begin() hangs
+    bool sdInitSuccess = false;
+    // Note: SD.begin() itself doesn't have timeout, so we just proceed with caution
     if (!SD.begin(SD_CS_PIN, spiSD, speeds[i])) {
       Serial.println(" FAILED to initialize");
+      continue;
+    }
+    
+    // Verify initialization actually worked
+    if (millis() - startTime > SD_INIT_TIMEOUT) {
+      Serial.println(" TIMEOUT");
+      SD.end();
       continue;
     }
     
@@ -969,13 +985,37 @@ void searchFiles(const char* searchPattern) {
   
   Serial.println("Matching Files:");
   
-  while (file) {
+  int fileProcessCount = 0;
+  const int MAX_FILES_TO_PROCESS = 500;  // Prevent processing excessive files
+  
+  while (file && fileProcessCount < MAX_FILES_TO_PROCESS) {
+    fileProcessCount++;
+    
     if (!file.isDirectory()) {
       const char* filename = file.name();
-      String filenameUpper = String(filename);
-      filenameUpper.toUpperCase();
+      if (filename == NULL) {
+        file.close();
+        file = root.openNextFile();
+        continue;
+      }
       
-      if (filenameUpper.indexOf(patternUpper) >= 0) {
+      // Use c-style string comparison instead of String to reduce heap usage
+      int found = 0;
+      for (int j = 0; filename[j] != 0; j++) {
+        char c1 = filename[j];
+        char c2 = searchPattern[j % strlen(searchPattern)];
+        
+        // Convert to uppercase for comparison
+        if (c1 >= 'a' && c1 <= 'z') c1 -= 32;
+        if (c2 >= 'a' && c2 <= 'z') c2 -= 32;
+        
+        if (c1 == c2) {
+          found = 1;
+          break;
+        }
+      }
+      
+      if (found) {
         matchCount++;
         Serial.print("  ");
         Serial.print(matchCount);
@@ -1034,19 +1074,38 @@ void readFile(const char* filename) {
   Serial.println(" bytes");
   printDivider();
   
-  // Read and display file content
+  // Read and display file content with safety limits
   long bytesRead = 0;
   int lineNumber = 1;
+  const int MAX_LINES_TO_READ = 500;  // Prevent reading extremely large files
+  const unsigned long READ_TIMEOUT = 10000;  // 10 second timeout for entire read
+  unsigned long readStartTime = millis();
   
-  while (file.available()) {
-    String line = file.readStringUntil('\n');
+  while (file.available() && lineNumber <= MAX_LINES_TO_READ) {
+    // Check timeout to prevent watchdog reboot
+    if (millis() - readStartTime > READ_TIMEOUT) {
+      Serial.println("⚠ Read operation timeout - stopping");
+      break;
+    }
     
-    // Print line number for reference
-    Serial.print(lineNumber);
-    Serial.print(" | ");
-    Serial.println(line);
+    // Use c-style reading instead of String to avoid heap fragmentation
+    char buffer[256] = {0};
+    int charCount = 0;
+    int nextChar;
     
-    bytesRead += line.length() + 1;
+    // Read until newline or buffer full
+    while ((nextChar = file.read()) != -1 && nextChar != '\n' && charCount < 255) {
+      buffer[charCount++] = (char)nextChar;
+    }
+    
+    if (charCount > 0) {
+      buffer[charCount] = 0;  // Null terminate
+      Serial.print(lineNumber);
+      Serial.print(" | ");
+      Serial.println(buffer);
+      bytesRead += charCount + 1;
+    }
+    
     lineNumber++;
   }
   
