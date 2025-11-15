@@ -1589,7 +1589,14 @@ bool checkAndSetTimeFromSerial(String input) {
   }
   if (second < 0 || second > 59) {
     Serial.print("✗ Second out of range: "); Serial.println(second);
-    return true;
+    // Check if hour changed - if so, handle it immediately
+  if (hour != lastHour) {
+    Serial.println("Hour changed - creating hourly file...");
+    handleHourChange(newTime);
+    lastHour = hour;
+  }
+  
+return true;
   }
   
   // All valid - set the RTC
@@ -1604,7 +1611,14 @@ bool checkAndSetTimeFromSerial(String input) {
   Serial.print(minute); Serial.print(":");
   Serial.println(second);
   
-  return true;
+  // Check if hour changed - if so, handle it immediately
+  if (hour != lastHour) {
+    Serial.println("Hour changed - creating hourly file...");
+    handleHourChange(newTime);
+    lastHour = hour;
+  }
+  
+return true;
 }
 
 // ========================================
@@ -1999,6 +2013,9 @@ void displayDiagnosticResults() {
   display.print("%)");
   display.display();
 }
+
+
+
 
 
 
