@@ -69,6 +69,7 @@ int productionCount = 0;
 volatile bool productionStatusChanged = false;
 volatile unsigned long lastLatchingButtonTime = 0;
 volatile unsigned long lastDiagnosticButtonTime = 0;
+volatile int lastLatchingButtonState = HIGH;  // Track last known state (HIGH = released)
 
 unsigned long lastSaveTime = 0;
 #define SAVE_INTERVAL 5000
@@ -478,9 +479,12 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(DIAGNOSTIC_PIN), handleDiagnosticButton, FALLING);
   
   pinMode(LATCHING_PIN, INPUT_PULLUP);
+  lastLatchingButtonState = digitalRead(LATCHING_PIN);  // Initialize with current state
   attachInterrupt(digitalPinToInterrupt(LATCHING_PIN), handleLatchingButton, CHANGE);
   
   Serial.println("\n✓ Interrupts configured");
+  Serial.print("✓ Latching button initial state: ");
+  Serial.println(lastLatchingButtonState == LOW ? "PRESSED (LOW)" : "RELEASED (HIGH)");
   
   if (rtcAvailable) {
     DateTime now = rtc.now();
@@ -538,18 +542,23 @@ void loop() {
       productionStatusChanged = false;
       delay(50);  // Allow pin to settle after interrupt
       
-      // Read the actual button state (LOW = pressed/ON, HIGH = released/OFF)
-      bool buttonPressed = (digitalRead(LATCHING_PIN) == LOW);
+      // Read the current button state
+      int currentButtonState = digitalRead(LATCHING_PIN);
       
-      if (buttonPressed) {
-        // Button is being held DOWN → START production
-        startProduction();
-      } else {
-        // Button is released → STOP production
-        stopProduction();
+      // Only process if state actually changed (debounce filter)
+      if (currentButtonState != lastLatchingButtonState) {
+        lastLatchingButtonState = currentButtonState;
+        
+        // LOW = pressed/held down → START production
+        // HIGH = released → STOP production
+        if (currentButtonState == LOW) {
+          startProduction();
+        } else {
+          stopProduction();
+        }
+        
+        needsFullRedraw = true;
       }
-      
-      needsFullRedraw = true;
     }
     
     // Update time display
