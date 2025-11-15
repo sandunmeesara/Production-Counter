@@ -817,7 +817,9 @@ void writeCountToFile(const char* filename, int count) {
   file.println(count);
   file.flush();
   file.close();
-}\n\nvoid handleHourChange(DateTime now) {
+}
+
+void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
   
   // IMPORTANT: Only reset currentCount if production is NOT active
@@ -1222,7 +1224,8 @@ void saveProductionSession() {
   }
   
   File file = SD.open(filename, FILE_WRITE);
-  if (!file) {Serial.print("✗ Failed to create production file: "); Serial.println(filename);
+  if (!file) {
+    Serial.print("✗ Failed to create production file: "); Serial.println(filename);
     return;
   }
   
@@ -1996,6 +1999,8 @@ void displayDiagnosticResults() {
   display.print("%)");
   display.display();
 }
+
+
 
 
 

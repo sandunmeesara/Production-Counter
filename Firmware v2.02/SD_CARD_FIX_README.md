@@ -81,7 +81,7 @@ hourly_count.txt
 cumulative_count.txt
 Production_20240115_143022_to_143045.txt
 
-READ /count.txt
+READ /count.txt 
 ✗ File not found: /count.txt   ← FILE NOT FOUND even though LS shows it!
 ```
 
