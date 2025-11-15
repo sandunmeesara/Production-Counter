@@ -312,11 +312,46 @@ void formatTimeString(char* buffer, DateTime dt, bool includeSeconds) {
 }
 
 // ========================================
-// SETUP
+// SETUP WITH RETRY MECHANISM
 // ========================================
+#define MAX_STARTUP_RETRIES 3
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
+  
+  // Attempt startup with retry mechanism
+  int startupAttempt = 1;
+  while (startupAttempt <= MAX_STARTUP_RETRIES) {
+    if (performStartup(startupAttempt)) {
+      return;  // Successful startup
+    }
+    startupAttempt++;
+  }
+  
+  // If all retries failed, stop and show error
+  showFatalError();
+}
+
+bool performStartup(int attempt) {
+  if (attempt > 1) {
+    Serial.print("\n\n>>> RETRY ATTEMPT "); Serial.print(attempt); Serial.println(" <<<\n");
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(10, 20);
+    display.print("RETRY ");
+    display.println(attempt);
+    display.setCursor(10, 35);
+    display.println("of 3");
+    display.display();
+    delay(1500);
+  }
+  
+  return initializeAllSystems();
+}
+
+bool initializeAllSystems() {
   
   Serial.println("\n╔════════════════════════════════════════╗");
   Serial.println("║   ESP32 COUNTER - OLED 128x64 VERSION ║");
@@ -324,8 +359,12 @@ void setup() {
   
   // Load settings from EEPROM
   Serial.println("--- Loading Settings from EEPROM ---");
-  loadSettingsFromEEPROM();
-  cachedDebounceDelay = runtimeParams.debounceDelay;
+  if (allSystemsOk) {
+    loadSettingsFromEEPROM();
+    cachedDebounceDelay = runtimeParams.debounceDelay;
+  } else {
+    return false;  // Failed to load settings
+  }
   
   // Initialize I2C for OLED
   Wire.begin(I2C_SDA, I2C_SCL);
@@ -335,7 +374,8 @@ void setup() {
   Serial.println("\n--- OLED Display Initialization ---");
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println("✗ SSD1306 allocation failed!");
-    for(;;); // Don't proceed, loop forever
+    allSystemsOk = false;  // Mark as failed
+    if (allSystemsOk) return false;  // Will retry
   }
   
   Serial.println("✓ OLED Display initialized");
@@ -372,8 +412,9 @@ void setup() {
   sdAvailable = initializeSD();
   
   if (!sdAvailable) {
-    Serial.println("✗ SD Card failed - continuing without SD");
-    showStatus("SD ERROR", 2000);
+    Serial.println("✗ SD Card failed - will retry");
+    showStatus("SD ERROR", 1000);
+    return false;  // Trigger retry
   } else {
     Serial.println("✓ SD Card ready");
     showStatus("SD OK", 1000);
@@ -384,8 +425,9 @@ void setup() {
   showStatus("Init RTC...", 500);
   
   if (!rtc.begin()) {
-    Serial.println("✗ RTC not responding");
+    Serial.println("✗ RTC not responding - will retry");
     rtcAvailable = false;
+    return false;  // Trigger retry
   } else {
     rtcAvailable = true;
     Serial.println("✓ RTC responding");
@@ -505,6 +547,36 @@ void setup() {
   Serial.println("Type 'INFO' in Serial for DEBUG MENU\n");
   
   debugMenu();
+  
+  return true;  // Successful startup
+}
+
+void showFatalError() {
+  Serial.println("\n\n╔════════════════════════════════════════╗");
+  Serial.println("║        ✗✗✗ FATAL ERROR ✗✗✗           ║");
+  Serial.println("║   System failed after 3 attempts      ║");
+  Serial.println("║   Check connections:                  ║");
+  Serial.println("║   • OLED I2C (GPIO 21/22)            ║");
+  Serial.println("║   • RTC I2C (GPIO 21/22)             ║");
+  Serial.println("║   • SD Card SPI (GPIO 18/19/23/26)   ║");
+  Serial.println("╚════════════════════════════════════════╝\n");
+  
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(20, 10);
+  display.println("ERROR!");
+  display.setTextSize(1);
+  display.setCursor(5, 35);
+  display.println("Check connections");
+  display.setCursor(10, 50);
+  display.println("and restart");
+  display.display();
+  
+  // Infinite loop - user must restart
+  while (true) {
+    delay(100);
+  }
 }
 
 // ========================================
@@ -819,8 +891,64 @@ void writeCountToFile(const char* filename, int count) {
   file.close();
 }
 
+void saveHourlyCountFile(DateTime now) {
+  if (!sdAvailable) {
+    Serial.println("  ⚠ SD Card not available - cannot create hourly file");
+    return;
+  }
+  
+  // Create hourly file with format: Hour_YYYYMMDD_HHMM.txt
+  char filename[64];
+  snprintf(filename, sizeof(filename), "/Hour_%04d%02d%02d_%02d%02d.txt",
+           now.year(), now.month(), now.day(), now.hour(), now.minute());
+  
+  Serial.print("  → Creating hourly file: "); Serial.println(filename);
+  
+  // Delete if exists to ensure clean write
+  if (SD.exists(filename)) {
+    Serial.println("    (Removing existing file)");
+    if (!SD.remove(filename)) {
+      Serial.println("    ✗ Failed to remove old file");
+    }
+  }
+  
+  File file = SD.open(filename, FILE_WRITE);
+  if (!file) {
+    Serial.print("  ✗ FAILED to create hourly file: "); Serial.println(filename);
+    return;
+  }
+  
+  // Write hourly production data
+  file.println("=== HOURLY PRODUCTION LOG ===");
+  file.print("Hour: ");
+  file.print(now.hour()); file.print(":00 on ");
+  file.print(now.year()); file.print("-");
+  file.print(now.month()); file.print("-");
+  file.println(now.day());
+  
+  file.print("Hourly Count: ");
+  file.println(hourlyCount);
+  
+  file.print("Cumulative Count: ");
+  file.println(cumulativeCount);
+  
+  file.print("Production Active: ");
+  file.println(productionActive ? "YES" : "NO");
+  
+  file.flush();
+  file.close();
+  
+  Serial.print("  ✓ Hourly file CREATED: "); Serial.println(filename);
+}
+
 void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
+  Serial.print("  Previous hour: "); Serial.print(lastHour);
+  Serial.print(" → New hour: "); Serial.println(now.hour());
+  
+  // CREATE HOURLY FILE FOR THIS HOUR (always do this)
+  saveHourlyCountFile(now);
+  Serial.println("  ✓ Hourly file creation triggered");
   
   // IMPORTANT: Only reset currentCount if production is NOT active
   // If production is active, we need to preserve the count differential
