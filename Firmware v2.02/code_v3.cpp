@@ -819,6 +819,48 @@ void writeCountToFile(const char* filename, int count) {
   file.close();
 }
 
+void saveHourlyCountFile(DateTime now, int count) {
+  if (!sdAvailable) {
+    return;
+  }
+  
+  // Create filename: Hour_YYYYMMDD_HHMM.txt
+  // Example: Hour_20251115_1430.txt (Nov 15, 2025 at 2:30 PM)
+  char filename[32];
+  snprintf(filename, sizeof(filename), "/Hour_%04d%02d%02d_%02d%02d.txt",
+           now.year(), now.month(), now.day(), now.hour(), now.minute());
+  
+  // Delete if exists (to create fresh file)
+  if (SD.exists(filename)) {
+    SD.remove(filename);
+  }
+  
+  File file = SD.open(filename, FILE_WRITE);
+  if (!file) {
+    Serial.print("✗ Failed to create hourly file: "); Serial.println(filename);
+    return;
+  }
+  
+  // Write hour information and count
+  file.print("Hour: ");
+  file.print(now.year()); file.print("-");
+  file.print(now.month()); file.print("-");
+  file.print(now.day()); file.print(" ");
+  file.print(now.hour()); file.print(":00");
+  file.println();
+  
+  file.print("Count: ");
+  file.println(count);
+  
+  file.print("Cumulative: ");
+  file.println(cumulativeCount);
+  
+  file.flush();
+  file.close();
+  
+  Serial.print("✓ Hourly count file created: "); Serial.println(filename);
+}
+
 void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
   
@@ -840,6 +882,9 @@ void handleHourChange(DateTime now) {
       writeCountToFile(COUNT_FILE, 0);
       writeCountToFile(HOURLY_FILE, hourlyCount);
       writeCountToFile(CUMULATIVE_FILE, cumulativeCount);
+      
+      // Create new hourly timestamped file (NEW FEATURE)
+      saveHourlyCountFile(now, hourlyCount);
     }
     
     needsFullRedraw = true;
