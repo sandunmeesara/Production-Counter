@@ -95,8 +95,8 @@ volatile unsigned long cachedDebounceDelay = DEBOUNCE_DELAY;
 // ========================================
 // SD CARD MACROS
 // ========================================
-// SD_BEGIN removed
-// SD_END removed
+#define  digitalWrite(SD_CS_PIN, LOW)
+#define  digitalWrite(SD_CS_PIN, HIGH)
 
 const char* COUNT_FILE = "/count.txt";
 const char* HOURLY_FILE = "/hourly_count.txt";
@@ -720,6 +720,7 @@ bool initializeSD() {
 void initializeFiles() {
   Serial.println("\n--- Initializing SD Files ---");
   
+  ;
   
   if (!SD.exists(COUNT_FILE)) {
     Serial.print("Creating "); Serial.println(COUNT_FILE);
@@ -817,7 +818,10 @@ void writeCountToFile(const char* filename, int count) {
   file.println(count);
   file.flush();
   file.close();
-}\n\nvoid handleHourChange(DateTime now) {
+}
+}
+
+void handleHourChange(DateTime now) {
   Serial.println("\n>>> Hour Changed <<<");
   
   // IMPORTANT: Only reset currentCount if production is NOT active
@@ -1215,6 +1219,7 @@ void saveProductionSession() {
            productionStartTime.hour(), productionStartTime.minute(), productionStartTime.second(),
            productionStopTime.hour(), productionStopTime.minute(), productionStopTime.second());
   
+  ;
   
   // Delete if exists
   if (SD.exists(filename)) {
@@ -1222,7 +1227,9 @@ void saveProductionSession() {
   }
   
   File file = SD.open(filename, FILE_WRITE);
-  if (!file) {Serial.print("✗ Failed to create production file: "); Serial.println(filename);
+  if (!file) {
+    ;
+    Serial.print("✗ Failed to create production file: "); Serial.println(filename);
     return;
   }
   
@@ -1302,9 +1309,12 @@ void saveProductionState() {
   }
   
   // Production is active - save current state
+  ;
   
   File file = SD.open(PRODUCTION_STATE_FILE, FILE_WRITE);
-  if (!file) {return;
+  if (!file) {
+    ;
+    return;
   }
   
   // Format: currentCount|productionStartCount|year|month|day|hour|minute|second
@@ -1319,6 +1329,7 @@ void saveProductionState() {
   
   file.flush();
   file.close();
+  ;
 }
 
 // This restores a production session from the state file if it exists.
@@ -1329,12 +1340,17 @@ void restoreProductionState() {
     return;
   }
   
+  ;
   
-  if (!SD.exists(PRODUCTION_STATE_FILE)) {return; // No saved state, normal startup
+  if (!SD.exists(PRODUCTION_STATE_FILE)) {
+    ;
+    return; // No saved state, normal startup
   }
   
   File file = SD.open(PRODUCTION_STATE_FILE, FILE_READ);
-  if (!file) {return;
+  if (!file) {
+    ;
+    return;
   }
   
   // Read saved state
@@ -1348,6 +1364,7 @@ void restoreProductionState() {
   int second = file.parseInt();
   
   file.close();
+  ;
   
   // Validate the data
   if (year >= 2020 && year <= 2100 && month >= 1 && month <= 12 && 
@@ -1383,9 +1400,11 @@ void clearProductionState() {
     return;
   }
   
+  ;
   if (SD.exists(PRODUCTION_STATE_FILE)) {
     SD.remove(PRODUCTION_STATE_FILE);
   }
+  ;
 }
 
 // ========================================
@@ -1704,10 +1723,14 @@ bool processDebugCommand(String input) {
     Serial.print("SD Card:        ");
     Serial.println(sdAvailable ? "✓ READY" : "✗ NOT READY");
     
-    if (sdAvailable) {uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+    if (sdAvailable) {
+      ;
+      uint64_t cardSize = SD.cardSize() / (1024 * 1024);
       Serial.print("SD Card Size:   ");
       Serial.print(cardSize);
-      Serial.println(" MB");}
+      Serial.println(" MB");
+      ;
+    }
     Serial.println();
     return true;
   }
@@ -1996,6 +2019,3 @@ void displayDiagnosticResults() {
   display.print("%)");
   display.display();
 }
-
-
-
